@@ -1,0 +1,602 @@
+import { useState } from "react";
+
+function App() {
+const [players, setPlayers] = useState([
+ 
+  { name: "Player 1", chips: 1000, bet: 0, dealer: true,sb: false,bb: false, x: "85%", y: "50%", folded: false },
+  { name: "Player 2", chips: 990,  bet: 10, dealer: false,sb: true,bb: false, x: "70%", y: "85%", folded: false },
+  { name: "Player 3", chips: 980,  bet: 20, dealer: false,sb: false,bb: true, x: "30%", y: "85%", folded: false },
+  { name: "Player 4", chips: 1000, bet: 20, dealer: false,sb: false,bb: false,x: "15%", y: "50%", folded: false },
+  { name: "Player 5", chips: 1000, bet: 0, dealer: false,sb: false,bb: false, x: "30%", y: "15%", folded: false },
+  { name: "Player 6", chips: 1000, bet: 0, dealer: false,sb: false,bb: false, x: "70%", y: "15%", folded: false },
+]);
+const [currentPlayer, setCurrentPlayer] = useState(3);
+const [winner, setWinner] = useState(null);
+const [pot, setPot] = useState(30);
+const [currentBet, setCurrentBet] = useState(20);
+const [raiseAmount,  setRaiseAmount] = useState(20);
+const [street, setStreet] = useState("PREFLOP");
+const [actionLog, setActionLog] = useState([]);
+const [lastRaiser, setLastRaiser] = 
+  useState(null);
+
+function nextPlayer() {
+  let next = (currentPlayer + 1) % players.length;
+
+  while (players[next].folded) {
+    next = (next + 1) % players.length;
+  }
+
+  setCurrentPlayer(next);
+}
+
+function foldPlayer() {
+  const updatedPlayers = [...players];
+
+  const player = updatedPlayers[currentPlayer];
+
+  player.folded = true;
+
+  setPlayers(updatedPlayers);
+
+  addAction(
+    `${player.name} folds`
+  );
+
+  const remaining = updatedPlayers.filter(
+    (player) => !player.folded
+  );
+  
+  if (remaining.length === 1) {
+    setWinner(remaining[0].name);
+    return;
+  }
+
+  nextPlayer();
+}
+
+function activePlayers() {
+  return players.filter(
+    (player) => !player.folded
+  ).length;
+}
+
+function checkAction() {
+
+  const player = players[currentPlayer];
+
+  if (player.bet !== currentBet) {
+    return;
+  }
+
+  addAction(
+    `${player.name} checks`
+  );
+
+  nextPlayer();
+
+  if (bettingRoundComplete(players)) {advanceStreet();
+
+  }
+}
+
+function callAction() {
+  const updatedPlayers = [...players];
+
+  const player = updatedPlayers[currentPlayer];
+
+  const diff = currentBet - player.bet;
+
+  player.chips -= diff;
+  player.bet += diff;
+
+  setPlayers(updatedPlayers);
+
+  setPot(pot + diff);
+
+  addAction(
+    `${player.name} calls`
+  );
+
+  if (bettingRoundComplete(updatedPlayers)) {
+    advanceStreet();
+  } else {nextPlayer();}
+}
+
+function raiseAction() {
+  const updatedPlayers = [...players];
+
+  const player = updatedPlayers[currentPlayer];
+
+  const newBet = currentBet + raiseAmount;
+
+  const diff = newBet - player.bet;
+
+  player.chips -= diff;
+
+  player.bet += diff;
+
+  setPlayers(updatedPlayers);
+
+  setPot(pot + diff);
+
+  setCurrentBet(newBet);
+
+  setLastRaiser(currentPlayer);
+
+  addAction(
+    `${player.name} raises to ${newBet}`
+  );
+
+  nextPlayer();
+}
+
+function bettingRoundComplete(playersToCheck) {
+
+  const allMatched = playersToCheck.every(
+    (player) =>
+      player.folded ||
+      player.bet === currentBet
+  );
+
+  let next =
+    (currentPlayer + 1) %
+    playersToCheck.length;
+
+  while (
+    playersToCheck[next].folded
+  ) {
+    next =
+      (next + 1) %
+      playersToCheck.length;
+  }
+
+  console.log("lastRaiser =", lastRaiser);
+  console.log("allMatched =", allMatched);
+  console.log("next =", next);
+
+  if (lastRaiser === null) {
+    return allMatched;
+  }
+
+  return (
+    allMatched &&
+    next === lastRaiser
+  );
+}
+
+function resetBettingRound() {
+
+  const updatedPlayers = [...players];
+
+  for (const player of updatedPlayers) {
+    player.bet = 0;
+  }
+
+  setPlayers(updatedPlayers);
+
+  setCurrentBet(0);
+
+}
+
+function advanceStreet() {
+  resetBettingRound();
+  setCurrentPlayer(
+    getFirstPostFlopPlayer()
+  );
+
+  if (street === "PREFLOP") {
+    setStreet("FLOP");
+  } else if (street === "FLOP") {
+    setStreet("TURN");
+  } else if (street === "TURN") {
+    setStreet("RIVER");
+  } else if (street === "RIVER") {
+    setStreet("SHOWDOWN");
+  }
+  
+}
+
+function rotateDealer(updatedPlayers) {
+
+  let dealerIndex = 0;
+
+  for (let i = 0; i < updatedPlayers.length; i++) {
+    if (updatedPlayers[i].dealer) {
+      dealerIndex = i;
+      break;
+    }
+  }
+
+  updatedPlayers[dealerIndex].dealer = false;
+
+  const newDealer =
+    (dealerIndex + 1) % updatedPlayers.length;
+
+  updatedPlayers[newDealer].dealer = true;
+}
+
+function rotateBlinds(updatedPlayers) {
+
+  for (const player of updatedPlayers) {
+    player.sb = false;
+    player.bb = false;
+  }
+
+  let dealerIndex = 0;
+
+  for (let i = 0; i < updatedPlayers.length; i++) {
+    if (updatedPlayers[i].dealer) {
+      dealerIndex = i;
+      break;
+    }
+  }
+
+  const sbIndex =
+    (dealerIndex + 1) % updatedPlayers.length;
+
+  const bbIndex =
+    (dealerIndex + 2) % updatedPlayers.length;
+
+  updatedPlayers[sbIndex].sb = true;
+  updatedPlayers[bbIndex].bb = true;
+}
+
+function getFirstPlayer(updatedPlayers) {
+
+  let bbIndex = 0;
+
+  for (let i = 0; i < updatedPlayers.length; i++) {
+    if (updatedPlayers[i].bb) {
+      bbIndex = i;
+      break;
+    }
+  }
+
+  return (bbIndex + 1) % updatedPlayers.length;
+}
+
+function newHand() {
+
+  const updatedPlayers = [...players];
+  rotateDealer(updatedPlayers);
+  rotateBlinds(updatedPlayers);
+  setCurrentPlayer(getFirstPlayer(updatedPlayers));
+
+  setCurrentBet(20);
+  setWinner(null);
+  setStreet("PREFLOP");
+  setActionLog([]);
+
+
+for (const player of updatedPlayers) {
+  player.bet = 0;
+  player.folded = false;
+}
+
+let sbIndex = -1;
+let bbIndex = -1;
+
+for (let i = 0; i < updatedPlayers.length; i++) {
+  if (updatedPlayers[i].sb) sbIndex = i;
+  if (updatedPlayers[i].bb) bbIndex = i;
+}
+
+if (sbIndex !== -1) {
+  updatedPlayers[sbIndex].chips -= 10;
+  updatedPlayers[sbIndex].bet = 10;
+}
+
+if (bbIndex !== -1) {
+  updatedPlayers[bbIndex].chips -= 20;
+  updatedPlayers[bbIndex].bet = 20;
+}
+
+setPot(30);
+setLastRaiser(bbIndex);
+setPlayers(updatedPlayers);
+}
+
+
+function addAction(text) {
+  console.log("ADDING: ",text);
+
+  setActionLog((prev) => [
+    text,
+    ...prev
+  ].slice(0, 5));
+}
+
+function getFirstPostFlopPlayer() {
+
+  let dealerIndex = 0;
+
+  for (let i = 0; i < players.length; i++) {
+    if (players[i].dealer) {
+      dealerIndex = i;
+      break;
+    }
+  }
+
+  let next =
+    (dealerIndex + 1) % players.length;
+
+  while (players[next].folded) {
+    next = (next + 1) % players.length;
+  }
+
+  return next;
+}
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#111",
+        color: "white",
+        padding: "20px",
+      }}
+    >
+      <h1 style={{ textAlign: "center" }}>
+        Poker Companion
+      </h1>
+
+      <h2>
+        Street: {street}
+      </h2>
+
+      <h2>
+        Turn: {players[currentPlayer].name}
+      </h2>
+
+      <button
+      onClick={() => {if (bettingRoundComplete(players)) {advanceStreet();}}}
+      >
+      End Betting Round
+      </button>
+
+      {winner && (
+        <h2>
+          Winner: {winner}
+        </h2>
+      )}
+
+      <div
+        style={{
+          border: "2px solid green",
+          borderRadius: "999px",
+          width: "350px",
+          height: "350px",
+          margin: "40px auto",
+          position: "relative",
+        }}
+      >
+        {players.map((player, index) => (
+          <div
+            key={index}
+            style={{
+              left: player.x,
+              top: player.y,
+              transform: "translate(-50%, -50%)",
+              position: "absolute",
+              background:
+              player.folded
+                ? "#7f1d1d"
+                : index === currentPlayer
+                ? "#facc15"
+                : "#444",
+              borderRadius: "50%",
+              width: "95px",
+              height: "95px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
+              fontSize: "14px",
+            }}
+            
+          >
+            <div>
+              <div>
+                {player.name}
+                {player.folded && " (Folded)"}
+              </div>
+
+              <div>{player.chips}</div>
+
+              <div>Bet: {player.bet}</div>
+
+              {player.dealer && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "-12px",
+                    right: "-12px",
+                    background: "gold",
+                    color: "black",
+                    borderRadius: "50%",
+                    width: "24px",
+                    height: "24px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: "bold",
+                  }}
+                >
+                  D 
+                 </div>
+                )}
+                {player.sb && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "-12px",
+                      left: "-12px",
+                      background: "dodgerblue",
+                      color: "white",
+                      borderRadius: "50%",
+                      width: "24px",
+                      height: "24px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: "bold",
+                      fontSize: "10px",
+                    }}
+                  >
+                    SB
+                  </div>
+                )}
+
+                {player.bb && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: "-12px",
+                      left: "-12px",
+                      background: "crimson",
+                      color: "white",
+                      borderRadius: "50%",
+                      width: "24px",
+                      height: "24px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: "bold",
+                      fontSize: "10px",
+                    }}
+                  >
+                    BB
+                  </div>
+                )}
+              </div>
+            </div>
+  ))}
+  <div
+  style={{
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+    fontSize: "28px",
+    fontWeight: "bold",
+  }}
+>
+  Pot: {pot}
+
+  <div>
+    Current Bet: {currentBet}
+  </div>
+
+  <div>
+    Raise Amount: {raiseAmount}
+  </div>
+</div>
+  </div>
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          justifyContent: "center",
+          flexWrap: "wrap",
+          marginTop: "20px"
+        }}
+      >
+        <button
+          onClick={foldPlayer}
+          style={{
+            padding: "12px 20px",
+            fontSize: "18px",
+            borderRadius: "12px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Fold
+        </button>
+        <button
+          onClick={checkAction}
+          style={{
+            padding: "12px 20px",
+            fontSize: "18px",
+            borderRadius: "12px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Check
+        </button>
+        <button
+          onClick={callAction}
+          style={{
+            padding: "12px 20px",
+            fontSize: "18px",
+            borderRadius: "12px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Call
+        </button>
+        <button
+          onClick={raiseAction}
+          style={{
+            padding: "12px 20px",
+            fontSize: "18px",
+            borderRadius: "12px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Raise
+        </button>
+        <button
+          onClick={() => setRaiseAmount(raiseAmount + 20)}
+        >
+          +20
+        </button>
+        <button
+          onClick={() =>
+            setRaiseAmount(Math.max(20, raiseAmount - 20))
+          }
+        >
+          -20
+        </button>
+        <button
+          style={{
+            padding: "12px 20px",
+            fontSize: "18px",
+            borderRadius: "12px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          All In
+        </button>
+<button onClick={advanceStreet}>
+Advance Street
+</button>
+
+<button onClick={newHand}>
+  New Hand
+</button>
+
+<h3>Recent Actions</h3>
+
+<div>
+{actionLog.map((entry, i) => (
+  <div key={i}>{entry}</div>
+))}
+</div>
+          <div>
+          Last Raiser:
+          {lastRaiser !== null
+              ? players[lastRaiser].name
+              : "None"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
